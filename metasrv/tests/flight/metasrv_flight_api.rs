@@ -18,12 +18,12 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 use common_base::tokio;
-use common_kv_api::KVApi;
-use common_kv_api_vo::UpsertKVActionResult;
-use common_metatypes::KVMeta;
-use common_metatypes::KVValue;
-use common_metatypes::MatchSeq;
-use common_store_api_sdk::StoreClient;
+use common_meta_api::KVApi;
+use common_meta_flight::MetaFlightClient;
+use common_meta_types::KVMeta;
+use common_meta_types::KVValue;
+use common_meta_types::MatchSeq;
+use common_meta_types::UpsertKVActionReply;
 use common_tracing::tracing;
 use metasrv::init_meta_ut;
 use pretty_assertions::assert_eq;
@@ -41,7 +41,7 @@ async fn test_restart() -> anyhow::Result<()> {
 
     let (mut tc, addr) = metasrv::tests::start_metasrv().await?;
 
-    let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+    let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
     tracing::info!("--- upsert kv");
     {
@@ -52,7 +52,7 @@ async fn test_restart() -> anyhow::Result<()> {
         tracing::debug!("set kv res: {:?}", res);
         let res = res?;
         assert_eq!(
-            UpsertKVActionResult {
+            UpsertKVActionReply {
                 prev: None,
                 result: Some((1, KVValue {
                     meta: None,
@@ -100,7 +100,7 @@ async fn test_restart() -> anyhow::Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(10_000)).await;
 
     // try to reconnect the restarted server.
-    let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+    let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
     tracing::info!("--- get kv");
     {
@@ -130,7 +130,7 @@ async fn test_generic_kv_mget() -> anyhow::Result<()> {
 
         let (_tc, addr) = metasrv::tests::start_metasrv().await?;
 
-        let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+        let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
         client
             .upsert_kv("k1", MatchSeq::Any, Some(b"v1".to_vec()), None)
@@ -178,7 +178,7 @@ async fn test_generic_kv_list() -> anyhow::Result<()> {
 
         let (_tc, addr) = metasrv::tests::start_metasrv().await?;
 
-        let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+        let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
         let mut values = vec![];
         {
@@ -226,7 +226,7 @@ async fn test_generic_kv_delete() -> anyhow::Result<()> {
 
         let (_tc, addr) = metasrv::tests::start_metasrv().await?;
 
-        let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+        let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
         let test_key = "test_key";
         client
@@ -294,7 +294,7 @@ async fn test_generic_kv_update() -> anyhow::Result<()> {
 
         let (_tc, addr) = metasrv::tests::start_metasrv().await?;
 
-        let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+        let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
         let test_key = "test_key_for_update";
 
@@ -400,7 +400,7 @@ async fn test_generic_kv_update_meta() -> anyhow::Result<()> {
 
         let (_tc, addr) = metasrv::tests::start_metasrv().await?;
 
-        let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+        let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
         let test_key = "test_key_for_update_meta";
 
@@ -506,7 +506,7 @@ async fn test_generic_kv_timeout() -> anyhow::Result<()> {
 
         let (_tc, addr) = metasrv::tests::start_metasrv().await?;
 
-        let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+        let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -620,7 +620,7 @@ async fn test_generic_kv() -> anyhow::Result<()> {
 
         let (_tc, addr) = metasrv::tests::start_metasrv().await?;
 
-        let client = StoreClient::try_create(addr.as_str(), "root", "xxx").await?;
+        let client = MetaFlightClient::try_create(addr.as_str(), "root", "xxx").await?;
 
         {
             // write

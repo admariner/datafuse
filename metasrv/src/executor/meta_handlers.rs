@@ -22,24 +22,27 @@ use common_arrow::arrow::io::ipc::write::common::IpcWriteOptions;
 use common_arrow::arrow_flight::utils::flight_data_from_arrow_schema;
 use common_arrow::arrow_flight::FlightData;
 use common_exception::ErrorCode;
-use common_meta_api_vo::*;
-use common_metatypes::Cmd::CreateDatabase;
-use common_metatypes::Cmd::CreateTable;
-use common_metatypes::Cmd::DropDatabase;
-use common_metatypes::Cmd::DropTable;
-use common_metatypes::Database;
-use common_metatypes::LogEntry;
-use common_metatypes::Table;
-use common_raft_store::state_machine::AppliedState;
-use common_store_api_sdk::meta_api_impl::CreateDatabaseAction;
-use common_store_api_sdk::meta_api_impl::CreateTableAction;
-use common_store_api_sdk::meta_api_impl::DropDatabaseAction;
-use common_store_api_sdk::meta_api_impl::DropTableAction;
-use common_store_api_sdk::meta_api_impl::GetDatabaseAction;
-use common_store_api_sdk::meta_api_impl::GetDatabasesAction;
-use common_store_api_sdk::meta_api_impl::GetTableAction;
-use common_store_api_sdk::meta_api_impl::GetTableExtReq;
-use common_store_api_sdk::meta_api_impl::GetTablesAction;
+use common_meta_flight::CreateDatabaseAction;
+use common_meta_flight::CreateTableAction;
+use common_meta_flight::DropDatabaseAction;
+use common_meta_flight::DropTableAction;
+use common_meta_flight::GetDatabaseAction;
+use common_meta_flight::GetDatabasesAction;
+use common_meta_flight::GetTableAction;
+use common_meta_flight::GetTableExtReq;
+use common_meta_flight::GetTablesAction;
+use common_meta_raft_store::state_machine::AppliedState;
+use common_meta_types::Cmd::CreateDatabase;
+use common_meta_types::Cmd::CreateTable;
+use common_meta_types::Cmd::DropDatabase;
+use common_meta_types::Cmd::DropTable;
+use common_meta_types::CreateDatabaseReply;
+use common_meta_types::CreateTableReply;
+use common_meta_types::Database;
+use common_meta_types::DatabaseInfo;
+use common_meta_types::LogEntry;
+use common_meta_types::Table;
+use common_meta_types::TableInfo;
 use log::info;
 
 use crate::executor::action_handler::RequestHandler;
@@ -170,6 +173,9 @@ impl RequestHandler<CreateTableAction> for ActionHandler {
 
         let table = Table {
             table_id: 0,
+            table_name: table_name.to_string(),
+            database_id: 0, // this field is unused during the creation of table
+            db_name: db_name.to_string(),
             schema: flight_data.data_header,
             table_engine: plan.engine.clone(),
             table_options: plan.options.clone(),
@@ -256,7 +262,7 @@ impl RequestHandler<DropTableAction> for ActionHandler {
 
 #[async_trait::async_trait]
 impl RequestHandler<GetTableAction> for ActionHandler {
-    async fn handle(&self, act: GetTableAction) -> common_exception::Result<TableInfo> {
+    async fn handle(&self, act: GetTableAction) -> common_exception::Result<Arc<TableInfo>> {
         let db_name = &act.db;
         let table_name = &act.table;
 
@@ -281,14 +287,16 @@ impl RequestHandler<GetTableAction> for ActionHandler {
                     ErrorCode::IllegalSchema(format!("invalid schema: {:}", e.to_string()))
                 })?;
                 let rst = TableInfo {
+                    database_id: db.database_id,
                     table_id: table.table_id,
+                    version: 0, // placeholder, not yet implemented in meta service
                     db: db_name.clone(),
                     name: table_name.clone(),
                     schema: Arc::new(arrow_schema.into()),
                     engine: table.table_engine.clone(),
                     options: table.table_options,
                 };
-                Ok(rst)
+                Ok(Arc::new(rst))
             }
             None => Err(ErrorCode::UnknownTable(table_name)),
         }
@@ -297,7 +305,7 @@ impl RequestHandler<GetTableAction> for ActionHandler {
 
 #[async_trait::async_trait]
 impl RequestHandler<GetTableExtReq> for ActionHandler {
-    async fn handle(&self, act: GetTableExtReq) -> common_exception::Result<TableInfo> {
+    async fn handle(&self, act: GetTableExtReq) -> common_exception::Result<Arc<TableInfo>> {
         // TODO duplicated code
         let table_id = act.tbl_id;
         let result = self.meta_node.get_table(&table_id).await;
@@ -311,15 +319,16 @@ impl RequestHandler<GetTableExtReq> for ActionHandler {
                     ErrorCode::IllegalSchema(format!("invalid schema: {:}", e.to_string()))
                 })?;
                 let rst = TableInfo {
+                    database_id: table.database_id,
                     table_id: table.table_id,
-                    // TODO rm these filed
-                    db: "".to_owned(),
-                    name: "".to_owned(), // TODO for each version of table, we duplicates the name at present
+                    db: table.db_name,
+                    name: table.table_name,
+                    version: 0,
                     schema: Arc::new(arrow_schema.into()),
                     engine: table.table_engine.clone(),
                     options: table.table_options,
                 };
-                Ok(rst)
+                Ok(Arc::new(rst))
             }
             None => Err(ErrorCode::UnknownTable(format!(
                 "table of id {} not found",
@@ -334,14 +343,16 @@ impl RequestHandler<GetDatabasesAction> for ActionHandler {
     async fn handle(
         &self,
         _req: GetDatabasesAction,
-    ) -> common_exception::Result<GetDatabasesReply> {
+    ) -> common_exception::Result<Vec<Arc<DatabaseInfo>>> {
         let res = self.meta_node.get_databases().await;
         Ok(res
             .iter()
-            .map(|(name, db)| DatabaseInfo {
-                database_id: db.database_id,
-                db: name.to_string(),
-                engine: db.database_engine.to_string(),
+            .map(|(name, db)| {
+                Arc::new(DatabaseInfo {
+                    database_id: db.database_id,
+                    db: name.to_string(),
+                    engine: db.database_engine.to_string(),
+                })
             })
             .collect::<Vec<_>>())
     }
@@ -349,7 +360,7 @@ impl RequestHandler<GetDatabasesAction> for ActionHandler {
 
 #[async_trait::async_trait]
 impl RequestHandler<GetTablesAction> for ActionHandler {
-    async fn handle(&self, req: GetTablesAction) -> common_exception::Result<GetTablesReply> {
+    async fn handle(&self, req: GetTablesAction) -> common_exception::Result<Vec<Arc<TableInfo>>> {
         let res = self.meta_node.get_tables(req.db.as_str()).await?;
         Ok(res
             .iter()
@@ -366,16 +377,18 @@ impl RequestHandler<GetTablesAction> for ActionHandler {
                     ))
                 })?;
 
-                let tbl_info = TableInfo {
+                let table_info = TableInfo {
+                    database_id: tbl.database_id,
                     db: req.db.to_string(),
                     table_id: *id,
+                    version: 0,
                     name: name.to_string(),
                     schema: Arc::new(arrow_schema.into()),
                     engine: tbl.table_engine.to_string(),
                     options: tbl.table_options.clone(),
                 };
 
-                acc.push(tbl_info);
+                acc.push(Arc::new(table_info));
                 Ok::<_, ErrorCode>(acc)
             })?)
     }

@@ -22,16 +22,15 @@ common-datablocks = {path = "../common/datablocks"}
 common-datavalues = {path = "../common/datavalues"}
 common-exception = {path = "../common/exception"}
 common-functions = {path = "../common/functions"}
+common-flight-rpc = {path = "../common/flight-rpc"}
 common-infallible = {path = "../common/infallible"}
-common-metatypes = {path = "../common/metatypes"}
 common-planners = {path = "../common/planners"}
-common-raft-store = {path = "../common/raft-store"}
 common-base = {path = "../common/base" }
-common-sled-store = {path = "../common/sled-store"}
-common-store-api-sdk = {path = "../common/store-api-sdk"}
+common-meta-raft-store = {path = "../common/meta/raft-store"}
+common-meta-sled-store = {path = "../common/meta/sled-store"}
+common-meta-flight = {path = "../common/meta/flight" }
+common-meta-types = {path = "../common/meta/types"}
 common-tracing = {path = "../common/tracing"}
-common-kv-api-vo = {path = "../common/kv-apis/vo" }
-common-meta-api-vo = {path = "../common/meta-apis/vo" }
 
 # Github dependencies
 
@@ -57,7 +56,7 @@ sled = { git = "https://github.com/datafuse-extras/sled", tag = "v0.34.7-datafus
 structopt = "0.3"
 structopt-toml = "0.5.0"
 tempfile = "3.2.0"
-thiserror = "1.0.29"
+thiserror = "1.0.30"
 threadpool = "1.8.1"
 tokio-stream = "0.1"
 tracing-appender = "0.1.2"
@@ -65,13 +64,11 @@ tonic = { version = "0.5.2", features = ["tls"]}
 
 sha2 = "0.9.8"
 uuid = { version = "0.8", features = ["serde", "v4"] }
-axum = {version = "0.2.6", features=["headers"] }
+axum = {version = "0.2.8", features=["headers"] }
 axum-server = { version = "0.2", features = ["tls-rustls"] }
 
 [dev-dependencies]
-
-common-kv-api = {path = "../common/kv-apis/api" }
-common-meta-api = {path = "../common/meta-apis/api" }
+common-meta-api = {path = "../common/meta/api" }
 
 pretty_assertions = "1.0"
 test-env-log = "0.2.7"

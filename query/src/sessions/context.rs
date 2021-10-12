@@ -21,12 +21,15 @@ use std::sync::Arc;
 use common_base::tokio::task::JoinHandle;
 use common_base::ProgressCallback;
 use common_base::ProgressValues;
+use common_base::Runtime;
 use common_base::TrySpawn;
+use common_context::TableIOContext;
 use common_exception::ErrorCode;
 use common_exception::Result;
 use common_infallible::RwLock;
-use common_metatypes::MetaId;
-use common_metatypes::MetaVersion;
+use common_meta_types::MetaId;
+use common_meta_types::MetaVersion;
+use common_meta_types::NodeInfo;
 use common_planners::Part;
 use common_planners::Partitions;
 use common_planners::PlanNode;
@@ -40,6 +43,7 @@ use crate::catalogs::TableFunctionMeta;
 use crate::catalogs::TableMeta;
 use crate::clusters::ClusterRef;
 use crate::configs::Config;
+use crate::datasources::common::ContextDalBuilder;
 use crate::datasources::table_func_engine::TableArgs;
 use crate::sessions::context_shared::DatabendQueryContextShared;
 use crate::sessions::SessionManagerRef;
@@ -143,17 +147,15 @@ impl DatabendQueryContext {
     }
 
     pub fn get_table(&self, database: &str, table: &str) -> Result<Arc<TableMeta>> {
-        self.get_catalog().get_table(database, table)
+        self.shared.get_table(database, table)
     }
 
     pub fn get_table_by_id(
         &self,
-        database: &str,
         table_id: MetaId,
         table_ver: Option<MetaVersion>,
     ) -> Result<Arc<TableMeta>> {
-        self.get_catalog()
-            .get_table_by_id(database, table_id, table_ver)
+        self.get_catalog().get_table_by_id(table_id, table_ver)
     }
 
     pub fn get_table_function(
@@ -220,6 +222,45 @@ impl DatabendQueryContext {
 
     pub fn get_sessions_manager(self: &Arc<Self>) -> SessionManagerRef {
         self.shared.session.get_sessions_manager()
+    }
+
+    pub fn get_shared_runtime(&self) -> Result<Arc<Runtime>> {
+        self.shared.try_get_runtime()
+    }
+
+    /// Build a TableIOContext for single node service.
+    pub fn get_single_node_table_io_context(self: &Arc<Self>) -> Result<TableIOContext> {
+        let nodes = vec![Arc::new(NodeInfo {
+            id: self.get_cluster().local_id(),
+            ..Default::default()
+        })];
+
+        let settings = self.get_settings();
+        let max_threads = settings.get_max_threads()? as usize;
+
+        Ok(TableIOContext::new(
+            self.get_shared_runtime()?,
+            Arc::new(ContextDalBuilder::new(self.get_config().storage)),
+            max_threads,
+            nodes,
+            Some(self.clone()),
+        ))
+    }
+
+    /// Build a TableIOContext that contains cluster information so that one using it could distributed data evenly in the cluster.
+    pub fn get_cluster_table_io_context(self: &Arc<Self>) -> Result<TableIOContext> {
+        let cluster = self.get_cluster();
+        let nodes = cluster.get_nodes();
+        let settings = self.get_settings();
+        let max_threads = settings.get_max_threads()? as usize;
+
+        Ok(TableIOContext::new(
+            self.get_shared_runtime()?,
+            Arc::new(ContextDalBuilder::new(self.get_config().storage)),
+            max_threads,
+            nodes,
+            Some(self.clone()),
+        ))
     }
 }
 

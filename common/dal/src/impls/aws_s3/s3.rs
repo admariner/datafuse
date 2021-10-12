@@ -13,13 +13,16 @@
 //  limitations under the License.
 //
 
-use std::io::Write;
+use std::str::FromStr;
 
 use common_base::tokio::io::AsyncReadExt;
 use common_exception::ErrorCode;
+use common_exception::Result;
 use futures::Stream;
 use futures::StreamExt;
+use rusoto_core::credential::StaticProvider;
 use rusoto_core::ByteStream;
+use rusoto_core::HttpClient;
 use rusoto_core::Region;
 use rusoto_s3::GetObjectRequest;
 use rusoto_s3::PutObjectRequest;
@@ -44,8 +47,38 @@ impl S3 {
         S3 { client, bucket }
     }
 
-    pub fn fake_new() -> Self {
-        todo!()
+    /// build S3 dal with aws credentials
+    /// for region mapping, see [`rusoto_core::Region`]
+    pub fn with_credentials(
+        region: &str,
+        bucket: &str,
+        access_key_id: &str,
+        secret_accesses_key: &str,
+    ) -> Result<Self> {
+        let region = Region::from_str(region).map_err(|e| {
+            ErrorCode::DALTransportError(format!(
+                "invalid region {}, error details {}",
+                region,
+                e.to_string()
+            ))
+        })?;
+        let provider = StaticProvider::new(
+            access_key_id.to_owned(),
+            secret_accesses_key.to_owned(),
+            None,
+            None,
+        );
+        let client = HttpClient::new().map_err(|e| {
+            ErrorCode::DALTransportError(format!(
+                "failed to create http client of s3, {}",
+                e.to_string()
+            ))
+        })?;
+        let client = S3Client::new_with(client, provider, region);
+        Ok(S3 {
+            client,
+            bucket: bucket.to_owned(),
+        })
     }
 
     async fn put_byte_stream(
@@ -77,11 +110,7 @@ impl DataAccessor for S3 {
         todo!()
     }
 
-    fn get_writer(&self, _path: &str) -> common_exception::Result<Box<dyn Write>> {
-        todo!()
-    }
-
-    async fn get_input_stream(
+    fn get_input_stream(
         &self,
         path: &str,
         stream_len: Option<u64>,
@@ -123,7 +152,10 @@ impl DataAccessor for S3 {
         &self,
         path: &str,
         input_stream: Box<
-            dyn Stream<Item = std::result::Result<Bytes, std::io::Error>> + Send + Unpin + 'static,
+            dyn Stream<Item = std::result::Result<bytes::Bytes, std::io::Error>>
+                + Send
+                + Unpin
+                + 'static,
         >,
         stream_len: usize,
     ) -> common_exception::Result<()> {

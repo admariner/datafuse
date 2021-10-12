@@ -31,9 +31,9 @@ use common_arrow::arrow_flight::HandshakeResponse;
 use common_arrow::arrow_flight::PutResult;
 use common_arrow::arrow_flight::SchemaResult;
 use common_arrow::arrow_flight::Ticket;
-use common_store_api_sdk::FlightClaim;
-use common_store_api_sdk::FlightToken;
-use common_store_api_sdk::StoreDoAction;
+use common_flight_rpc::FlightClaim;
+use common_flight_rpc::FlightToken;
+use common_meta_flight::MetaFlightAction;
 use common_tracing::tracing;
 use futures::Stream;
 use futures::StreamExt;
@@ -184,7 +184,7 @@ impl FlightService for MetaFlightImpl {
 
         common_tracing::extract_remote_span_as_parent(&request);
 
-        let action: StoreDoAction = request.try_into()?;
+        let action: MetaFlightAction = request.try_into()?;
         info!("Receive do_action: {:?}", action);
 
         let s = JsonSer;
